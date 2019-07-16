@@ -1,0 +1,72 @@
+package main
+
+import (
+	"fmt"
+	"log"
+	"os"
+	"io/ioutil"
+	"net"
+	"golang.org/x/crypto/ssh/agent"
+	"golang.org/x/crypto/ssh"
+)
+
+
+func main() {
+	if len(os.Args) != 4 {
+		log.Fatalf("Usage: %s <user> <host:port> <command>", os.Args[0])
+	}
+
+	client, session, err := connectToHost(os.Args[1], os.Args[2])
+	if err != nil {
+		panic(err)
+	}
+	out, err := session.CombinedOutput(os.Args[3])
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(string(out))
+	client.Close()
+}
+
+func connectToHost(user, host string) (*ssh.Client, *ssh.Session, error) {
+	sshConfig := &ssh.ClientConfig{
+		User: user,
+		Auth: []ssh.AuthMethod{PublicKeyFile("<path/to/private/key>")},
+	}
+	sshConfig.HostKeyCallback = ssh.InsecureIgnoreHostKey()
+
+	client, err := ssh.Dial("tcp", host, sshConfig)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	session, err := client.NewSession()
+	if err != nil {
+		client.Close()
+		return nil, nil, err
+	}
+
+	return client, session, nil
+}
+
+
+
+func PublicKeyFile(file string) ssh.AuthMethod {
+        buffer, err := ioutil.ReadFile(file)
+        if err != nil {
+                return nil
+        }
+
+        key, err := ssh.ParsePrivateKey(buffer)
+        if err != nil {
+                return nil
+        }
+        return ssh.PublicKeys(key)
+}
+
+func SSHAgent() ssh.AuthMethod {
+        if sshAgent, err := net.Dial("unix", os.Getenv("SSH_AUTH_SOCK")); err == nil {
+                return ssh.PublicKeysCallback(agent.NewClient(sshAgent).Signers)
+        }
+        return nil
+}
